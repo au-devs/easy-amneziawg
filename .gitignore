@@ -1,0 +1,10 @@
+# Per-server runtime state — server keys, obfuscation params, issued clients.
+# Never commit: these are secrets and are unique to each deployment.
+data/
+clients/
+
+# Client configuration files contain private keys.
+*.conf
+
+# Default output dir of fetch-clients.sh
+amneziawg-clients/

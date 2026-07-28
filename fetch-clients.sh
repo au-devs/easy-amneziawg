@@ -40,7 +40,7 @@ while IFS= read -r name; do
     *) continue ;;
   esac
   matched=$((matched+1))
-  if ssh "${HOST}" "docker exec ${CONTAINER} awg_manage --showclientcfg ${name}" \
+  if ssh -n "${HOST}" "docker exec ${CONTAINER} awg_manage --showclientcfg ${name}" \
        > "${DEST}/${name}.conf" 2>/dev/null && [ -s "${DEST}/${name}.conf" ]; then
     chmod 600 "${DEST}/${name}.conf"
     echo "OK   ${name}"
