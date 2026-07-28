@@ -1,0 +1,127 @@
+#!/bin/bash
+set -eo pipefail
+export PATH="/usr/local/bin:${PATH}"
+
+CONFIG_DIR="/opt/amnezia/awg"
+CONF="${CONFIG_DIR}/wg0.conf"
+PARAMS="${CONFIG_DIR}/client_params.env"
+CLIENTS_DIR="${CONFIG_DIR}/clients"
+
+mkdir -p "${CLIENTS_DIR}"
+# shellcheck disable=SC1090
+[ -f "${PARAMS}" ] && . "${PARAMS}"
+
+usage() {
+  cat <<EOF
+Usage:
+  awg_manage --addclient NAME        Add a client and print its config path
+  awg_manage --listclients           List existing clients
+  awg_manage --showclientcfg NAME    Print a client config to stdout
+  awg_manage --showclientqr NAME     Print a client config as a QR code
+  awg_manage --removeclient NAME [-y]  Remove a client
+EOF
+}
+
+next_octet() {
+  base_re="$(printf '%s' "${WG_SUBNET_BASE}" | sed 's/\./\\./g')"
+  used="$(grep -oE "AllowedIPs *= *${base_re}\.[0-9]+" "${CONF}" 2>/dev/null | grep -oE '[0-9]+$' || true)"
+  o=2
+  while printf '%s\n' "${used}" | grep -qx "${o}"; do o=$((o+1)); done
+  echo "${o}"
+}
+
+addclient() {
+  name="$1"
+  [ -z "${name}" ] && { echo "client name required"; exit 1; }
+  cfg="${CLIENTS_DIR}/${name}.conf"
+  [ -f "${cfg}" ] && { echo "client '${name}' already exists"; exit 1; }
+
+  priv="$(awg genkey)"
+  pub="$(printf '%s' "${priv}" | awg pubkey)"
+  psk="$(awg genpsk)"
+  o="$(next_octet)"
+  ip="${WG_SUBNET_BASE}.${o}"
+
+  {
+    echo ""
+    echo "# BEGIN ${name}"
+    echo "[Peer]"
+    echo "PublicKey = ${pub}"
+    echo "PresharedKey = ${psk}"
+    echo "AllowedIPs = ${ip}/32"
+    echo "# END ${name}"
+  } >> "${CONF}"
+
+  pskf="$(mktemp)"
+  printf '%s\n' "${psk}" > "${pskf}"
+  awg set wg0 peer "${pub}" preshared-key "${pskf}" allowed-ips "${ip}/32"
+  rm -f "${pskf}"
+
+  umask 077
+  cat > "${cfg}" <<EOF
+[Interface]
+PrivateKey = ${priv}
+Address = ${ip}/32
+DNS = ${CLIENT_DNS}
+MTU = ${CLIENT_MTU}
+Jc = ${Jc}
+Jmin = ${Jmin}
+Jmax = ${Jmax}
+S1 = ${S1}
+S2 = ${S2}
+H1 = ${H1}
+H2 = ${H2}
+H3 = ${H3}
+H4 = ${H4}
+
+[Peer]
+PublicKey = ${SERVER_PUB}
+PresharedKey = ${psk}
+AllowedIPs = 0.0.0.0/0
+Endpoint = ${VPN_PUBLIC_IP}:${WG_PORT}
+PersistentKeepalive = 25
+EOF
+
+  echo "Client '${name}' added at ${ip}."
+  echo "Config: ${cfg}"
+}
+
+listclients() {
+  ls -1 "${CLIENTS_DIR}" 2>/dev/null | sed 's/\.conf$//' || true
+}
+
+showclientcfg() {
+  name="$1"; cfg="${CLIENTS_DIR}/${name}.conf"
+  [ -f "${cfg}" ] || { echo "no such client: ${name}"; exit 1; }
+  cat "${cfg}"
+}
+
+showclientqr() {
+  name="$1"; cfg="${CLIENTS_DIR}/${name}.conf"
+  [ -f "${cfg}" ] || { echo "no such client: ${name}"; exit 1; }
+  qrencode -t ansiutf8 < "${cfg}"
+}
+
+removeclient() {
+  name="$1"
+  [ -z "${name}" ] && { echo "client name required"; exit 1; }
+  cfg="${CLIENTS_DIR}/${name}.conf"
+  pub="$(awk "/# BEGIN ${name}\$/,/# END ${name}\$/" "${CONF}" | sed -n 's/^PublicKey *= *//p')"
+  if [ "$2" != "-y" ]; then
+    printf "Remove client '%s'? [y/N] " "${name}"; read -r ans
+    [ "${ans}" = "y" ] || [ "${ans}" = "Y" ] || { echo "aborted"; exit 0; }
+  fi
+  [ -n "${pub}" ] && awg set wg0 peer "${pub}" remove || true
+  sed -i "/# BEGIN ${name}\$/,/# END ${name}\$/d" "${CONF}"
+  rm -f "${cfg}"
+  echo "Client '${name}' removed."
+}
+
+case "$1" in
+  --addclient)     addclient "$2" ;;
+  --listclients)   listclients ;;
+  --showclientcfg) showclientcfg "$2" ;;
+  --showclientqr)  showclientqr "$2" ;;
+  --removeclient)  removeclient "$2" "$3" ;;
+  *)               usage; exit 1 ;;
+esac
