@@ -16,7 +16,7 @@ is useful where plain WireGuard is throttled or blocked.
 - One-command bring-up; server keys and config auto-generated on first run.
 - Simple client management with QR output (`client-add.sh`, `client-qr.sh`, ...).
 - Public IP auto-detected on first start (override for NAT setups).
-- Full-tunnel by default (all client traffic egresses through the server).
+- Full-tunnel by default, with private/LAN subnets excluded from the tunnel out of the box.
 - Persistent state in a bind-mounted `data/` directory.
 
 ## Requirements
@@ -85,6 +85,34 @@ Edit the `environment:` block in `docker-compose.yml`. All values are optional.
 | `VPN_PUBLIC_IP` | auto-detected | Public IP written into client `Endpoint`; set explicitly behind NAT |
 | `CLIENT_DNS` | `1.1.1.1, 8.8.8.8` | DNS servers pushed to clients |
 | `CLIENT_MTU` | `1280` | Client MTU; conservative value that survives most mobile/DPI networks |
+| `CLIENT_EXCLUDE_NETS` | RFC1918 + CGNAT + link-local + multicast | Networks kept off the tunnel; set empty for a plain full tunnel |
+| `CLIENT_ALLOWED_IPS` | computed | Verbatim `AllowedIPs`; overrides `CLIENT_EXCLUDE_NETS` |
+
+### Split tunnel / excluded networks
+
+Client `AllowedIPs` is generated as `0.0.0.0/0` **minus** `CLIENT_EXCLUDE_NETS`, so LAN
+resources (router, NAS, printer, corporate subnets) stay reachable directly instead of being
+sent through the VPN. The default exclusion list is:
+
+```
+10.0.0.0/8  172.16.0.0/12  192.168.0.0/16  169.254.0.0/16  100.64.0.0/10  224.0.0.0/3
+```
+
+The VPN subnet itself is always added back, so the server and other peers remain reachable
+through the tunnel. To get the old behaviour, set `CLIENT_EXCLUDE_NETS=` (empty) or
+`CLIENT_ALLOWED_IPS=0.0.0.0/0`.
+
+Both variables are read at client-creation time, so changing them takes effect on the next
+`./client-add.sh` — no need to wipe `data/`.
+
+```bash
+docker exec amneziawg awg_manage --showallowedips     # preview the computed list
+docker exec amneziawg awg_manage --updateallowedips   # rewrite it in all existing clients
+```
+
+`--updateallowedips` only touches the client-side config (keys and peers are untouched), so
+re-fetch the configs afterwards (`./fetch-clients.sh` / `client-qr.sh`) and re-import them on
+the devices.
 
 Obfuscation parameters (`Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1`–`H4`) are generated on first
 start and stored in `data/client_params.env`. You may pin them via the same `environment:`
@@ -158,7 +186,7 @@ Change the `ARG` values in the `Dockerfile` to upgrade.
 - Userspace AmneziaWG is slightly slower than the kernel module, but fully functional and
   requires no host changes. For maximum throughput, install the AmneziaWG kernel module on the
   host and adapt the setup accordingly.
-- IPv6 is not configured; clients use `AllowedIPs = 0.0.0.0/0` (IPv4 full-tunnel) to avoid an
-  IPv6 black-hole when the server has no public IPv6.
+- IPv6 is not configured; clients get IPv4-only `AllowedIPs` to avoid an IPv6 black-hole when
+  the server has no public IPv6.
 - This project bundles only wrapper scripts and configuration. AmneziaWG and its tools are
   subject to their own upstream licenses.

@@ -11,6 +11,10 @@ mkdir -p "${CLIENTS_DIR}"
 # shellcheck disable=SC1090
 [ -f "${PARAMS}" ] && . "${PARAMS}"
 
+# Networks kept off the tunnel by default: RFC1918, CGNAT, link-local,
+# multicast and reserved space (224.0.0.0/3 covers 224.0.0.0-255.255.255.255).
+DEFAULT_EXCLUDE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 224.0.0.0/3"
+
 usage() {
   cat <<EOF
 Usage:
@@ -19,7 +23,86 @@ Usage:
   awg_manage --showclientcfg NAME    Print a client config to stdout
   awg_manage --showclientqr NAME     Print a client config as a QR code
   awg_manage --removeclient NAME [-y]  Remove a client
+  awg_manage --showallowedips        Print the AllowedIPs used for new clients
+  awg_manage --updateallowedips      Rewrite AllowedIPs in all existing client configs
 EOF
+}
+
+ip2int() {
+  local IFS=. a b c d
+  read -r a b c d <<< "$1"
+  echo $(( (a<<24) | (b<<16) | (c<<8) | d ))
+}
+
+int2ip() {
+  local n="$1"
+  echo "$(( (n>>24) & 255 )).$(( (n>>16) & 255 )).$(( (n>>8) & 255 )).$(( n & 255 ))"
+}
+
+# Split an inclusive address range into the smallest set of aligned CIDR blocks.
+range2cidr() {
+  local start="$1" end="$2" prefix size
+  while [ "${start}" -le "${end}" ]; do
+    prefix=0
+    while [ "${prefix}" -lt 32 ]; do
+      size=$(( 1 << (32 - prefix) ))
+      if [ $(( start % size )) -eq 0 ] && [ $(( start + size - 1 )) -le "${end}" ]; then
+        break
+      fi
+      prefix=$(( prefix + 1 ))
+    done
+    printf '%s/%s\n' "$(int2ip "${start}")" "${prefix}"
+    start=$(( start + (1 << (32 - prefix)) ))
+  done
+}
+
+# 0.0.0.0/0 minus the given networks, as a newline-separated CIDR list.
+complement_cidrs() {
+  local list="$1" cidr net bits base size s e cur=0 ranges
+  ranges="$(
+    for cidr in ${list}; do
+      net="${cidr%%/*}"
+      bits="${cidr#*/}"
+      [ "${bits}" = "${cidr}" ] && bits=32
+      base="$(ip2int "${net}")"
+      size=$(( 1 << (32 - bits) ))
+      base=$(( base - (base % size) ))
+      printf '%s %s\n' "${base}" "$(( base + size - 1 ))"
+    done | sort -n
+  )"
+  while read -r s e; do
+    [ -z "${s}" ] && continue
+    if [ "${s}" -gt "${cur}" ]; then
+      range2cidr "${cur}" $(( s - 1 ))
+    fi
+    if [ $(( e + 1 )) -gt "${cur}" ]; then
+      cur=$(( e + 1 ))
+    fi
+  done <<< "${ranges}"
+  if [ "${cur}" -le 4294967295 ]; then
+    range2cidr "${cur}" 4294967295
+  fi
+  return 0
+}
+
+client_allowed_ips() {
+  if [ -n "${CLIENT_ALLOWED_IPS}" ]; then
+    printf '%s' "${CLIENT_ALLOWED_IPS}"
+    return 0
+  fi
+  local excludes="${CLIENT_EXCLUDE_NETS-${DEFAULT_EXCLUDE_NETS}}"
+  if [ -z "${excludes}" ]; then
+    printf '%s' "0.0.0.0/0"
+    return 0
+  fi
+  local out="" n
+  while read -r n; do
+    [ -z "${n}" ] && continue
+    if [ -z "${out}" ]; then out="${n}"; else out="${out}, ${n}"; fi
+  done <<< "$(complement_cidrs "${excludes}")"
+  # The VPN subnet itself usually falls inside an excluded range; keep it routed
+  # through the tunnel so the server and other peers stay reachable.
+  printf '%s' "${out}, ${WG_SUBNET_BASE}.0/24"
 }
 
 next_octet() {
@@ -41,6 +124,7 @@ addclient() {
   psk="$(awg genpsk)"
   o="$(next_octet)"
   ip="${WG_SUBNET_BASE}.${o}"
+  aips="$(client_allowed_ips)"
 
   {
     echo ""
@@ -77,7 +161,7 @@ H4 = ${H4}
 [Peer]
 PublicKey = ${SERVER_PUB}
 PresharedKey = ${psk}
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = ${aips}
 Endpoint = ${VPN_PUBLIC_IP}:${WG_PORT}
 PersistentKeepalive = 25
 EOF
@@ -117,11 +201,28 @@ removeclient() {
   echo "Client '${name}' removed."
 }
 
+showallowedips() {
+  client_allowed_ips
+  echo
+}
+
+updateallowedips() {
+  aips="$(client_allowed_ips)"
+  for cfg in "${CLIENTS_DIR}"/*.conf; do
+    [ -e "${cfg}" ] || continue
+    sed -i "s|^AllowedIPs *=.*|AllowedIPs = ${aips}|" "${cfg}"
+    echo "updated $(basename "${cfg}" .conf)"
+  done
+  echo "AllowedIPs = ${aips}"
+}
+
 case "$1" in
-  --addclient)     addclient "$2" ;;
-  --listclients)   listclients ;;
-  --showclientcfg) showclientcfg "$2" ;;
-  --showclientqr)  showclientqr "$2" ;;
-  --removeclient)  removeclient "$2" "$3" ;;
-  *)               usage; exit 1 ;;
+  --addclient)        addclient "$2" ;;
+  --listclients)      listclients ;;
+  --showclientcfg)    showclientcfg "$2" ;;
+  --showclientqr)     showclientqr "$2" ;;
+  --removeclient)     removeclient "$2" "$3" ;;
+  --showallowedips)   showallowedips ;;
+  --updateallowedips) updateallowedips ;;
+  *)                  usage; exit 1 ;;
 esac
