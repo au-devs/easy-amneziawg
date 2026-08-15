@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ server.name }} — awg panel{% endblock %}
+{% block body %}
+<h1>{{ server.name }}</h1>
+<p class="sub">
+  <a href="/">← servers</a> &middot;
+  <span class="mono">{% if server.mode == "local" %}local docker{% else %}{{ server.ssh_user }}@{{ server.ssh_host }}:{{ server.ssh_port }}{% endif %}</span>
+</p>
+
+{% if error %}<div class="err">{{ error }}</div>{% endif %}
+{% if list_error %}<div class="err">Cannot reach server: {{ list_error }}</div>{% endif %}
+
+<div class="card">
+  {% if clients %}
+  <table>
+    <thead><tr><th>Client</th><th class="right"></th></tr></thead>
+    <tbody>
+      {% for c in clients %}
+      <tr>
+        <td class="mono">{{ c }}</td>
+        <td class="right">
+          <button class="link" hx-get="/servers/{{ server.id }}/clients/{{ c }}/qr"
+                  hx-target="#qr" hx-swap="innerHTML">QR</button>
+          <a href="/servers/{{ server.id }}/clients/{{ c }}/config">config</a>
+          <form class="inline" method="post"
+                action="/servers/{{ server.id }}/clients/{{ c }}/delete"
+                onsubmit="return confirm('Delete client {{ c }}? This revokes its access immediately.')">
+            <button class="danger" type="submit">delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif not list_error %}
+  <p class="empty">No clients on this server yet.</p>
+  {% endif %}
+</div>
+
+<div id="qr" style="margin-top:1rem"></div>
+
+<h2>Add client</h2>
+<div class="card">
+  <form method="post" action="/servers/{{ server.id }}/clients">
+    <div class="row">
+      <input class="grow" name="name" placeholder="name: letters, digits, - and _" required
+             pattern="[A-Za-z0-9_-]{1,32}" maxlength="32">
+      <select name="mode">
+        <option value="split">split — Android / iOS</option>
+        <option value="full">full — Linux / macOS</option>
+      </select>
+      <button class="primary" type="submit">Create</button>
+    </div>
+  </form>
+  <p class="sub" style="margin:.75rem 0 0">
+    Pick <b>full</b> for anything using wg-quick (Linux, macOS): without a <code>/0</code>
+    prefix it routes the server's own endpoint into the tunnel and the handshake never
+    completes. Those clients keep LAN access anyway.
+  </p>
+</div>
+{% endblock %}

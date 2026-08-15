@@ -114,6 +114,18 @@ client_allowed_ips() {
   printf '%s' "${out}, ${WG_SUBNET_BASE}.0/24"
 }
 
+# The name is substituted into sed/awk expressions and into file paths, so keep
+# it to characters that are inert there.
+check_name() {
+  case "$1" in
+    "") echo "client name required" >&2; exit 1 ;;
+  esac
+  if ! printf '%s' "$1" | grep -qE '^[A-Za-z0-9_-]{1,32}$'; then
+    echo "invalid client name: '$1' (allowed: 1-32 chars of A-Z a-z 0-9 - _)" >&2
+    exit 1
+  fi
+}
+
 resolve_aips() {
   case "${1}" in
     ""|--split) client_allowed_ips ;;
@@ -132,7 +144,7 @@ next_octet() {
 
 addclient() {
   name="$1"
-  [ -z "${name}" ] && { echo "client name required"; exit 1; }
+  check_name "${name}"
   cfg="${CLIENTS_DIR}/${name}.conf"
   [ -f "${cfg}" ] && { echo "client '${name}' already exists"; exit 1; }
   aips="$(resolve_aips "$2")"
@@ -192,20 +204,20 @@ listclients() {
 }
 
 showclientcfg() {
-  name="$1"; cfg="${CLIENTS_DIR}/${name}.conf"
+  name="$1"; check_name "${name}"; cfg="${CLIENTS_DIR}/${name}.conf"
   [ -f "${cfg}" ] || { echo "no such client: ${name}"; exit 1; }
   cat "${cfg}"
 }
 
 showclientqr() {
-  name="$1"; cfg="${CLIENTS_DIR}/${name}.conf"
+  name="$1"; check_name "${name}"; cfg="${CLIENTS_DIR}/${name}.conf"
   [ -f "${cfg}" ] || { echo "no such client: ${name}"; exit 1; }
   qrencode -t ansiutf8 < "${cfg}"
 }
 
 removeclient() {
   name="$1"
-  [ -z "${name}" ] && { echo "client name required"; exit 1; }
+  check_name "${name}"
   cfg="${CLIENTS_DIR}/${name}.conf"
   pub="$(awk "/# BEGIN ${name}\$/,/# END ${name}\$/" "${CONF}" | sed -n 's/^PublicKey *= *//p')"
   if [ "$2" != "-y" ]; then
@@ -225,7 +237,7 @@ showallowedips() {
 
 setallowedips() {
   name="$1"
-  [ -z "${name}" ] && { echo "client name required"; exit 1; }
+  check_name "${name}"
   [ -z "$2" ] && { echo "routing mode required (--full or --split)"; exit 1; }
   cfg="${CLIENTS_DIR}/${name}.conf"
   [ -f "${cfg}" ] || { echo "no such client: ${name}"; exit 1; }

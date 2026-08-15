@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block body %}
+<h1>AmneziaWG panel</h1>
+<p class="sub">Servers reachable from this control plane.</p>
+
+{% if request.query_params.get("error") %}
+  <div class="err">{{ request.query_params.get("error") }}</div>
+{% endif %}
+
+<div class="card">
+  {% if servers %}
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th><th>Access</th><th>Container</th><th>Status</th><th class="right"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in servers %}
+      <tr>
+        <td><a href="/servers/{{ s.id }}">{{ s.name }}</a></td>
+        <td class="mono">
+          {% if s.mode == "local" %}local docker{% else %}{{ s.ssh_user }}@{{ s.ssh_host }}:{{ s.ssh_port }}{% endif %}
+        </td>
+        <td class="mono">{{ s.container }}</td>
+        <td>
+          <span id="check-{{ s.id }}">
+            <button class="link" hx-post="/servers/{{ s.id }}/check"
+                    hx-target="#check-{{ s.id }}" hx-swap="innerHTML">check</button>
+          </span>
+        </td>
+        <td class="right">
+          <form class="inline" method="post" action="/servers/{{ s.id }}/delete"
+                onsubmit="return confirm('Remove {{ s.name }} from the panel? Clients on the server are not touched.')">
+            <button class="danger" type="submit">remove</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty">No servers yet. Add one below.</p>
+  {% endif %}
+</div>
+
+<h2>Connect a server</h2>
+<div class="card">
+  <form method="post" action="/servers">
+    <div class="row">
+      <input class="grow" name="name" placeholder="label, e.g. lit-vps" required>
+      <select name="mode">
+        <option value="ssh">over SSH</option>
+        <option value="local">local docker</option>
+      </select>
+      <input class="grow" name="ssh_host" placeholder="ssh host or IP">
+      <input name="ssh_user" value="root" size="8">
+      <input name="ssh_port" value="22" size="4">
+      <input name="container" value="amneziawg" size="12">
+      <button class="primary" type="submit">Add</button>
+    </div>
+  </form>
+  <p class="sub" style="margin:.75rem 0 0">
+    SSH uses key auth only, from <code>{{ "/data/ssh/id_ed25519" }}</code>, with strict host key
+    checking against <code>/data/ssh/known_hosts</code>. Host and container fields are ignored
+    for local docker access.
+  </p>
+</div>
+{% endblock %}

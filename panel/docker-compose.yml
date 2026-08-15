@@ -1,0 +1,25 @@
+services:
+  panel:
+    build: .
+    image: awg-panel
+    container_name: awg-panel
+    restart: unless-stopped
+    # Defaults to loopback. Set PANEL_BIND=0.0.0.0 to reach it from the home LAN,
+    # and set PANEL_PASSWORD as well before exposing it any wider than that.
+    ports:
+      - "${PANEL_BIND:-127.0.0.1}:8099:8000"
+    environment:
+      - PANEL_BIND=${PANEL_BIND:-127.0.0.1}
+      # Unset: no auth. Set: HTTP Basic on every route.
+      - PANEL_PASSWORD=${PANEL_PASSWORD:-}
+      - PANEL_USERNAME=${PANEL_USERNAME:-admin}
+      - PANEL_DB=/data/panel.db
+      - SSH_KEY=/data/ssh/id_ed25519
+      - KNOWN_HOSTS=/data/ssh/known_hosts
+    volumes:
+      - ./data:/data
+      # Only needed for servers added in "local docker" mode.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # GID of the host's docker group, so the socket is usable without running as root.
+    group_add:
+      - "${DOCKER_GID:-999}"

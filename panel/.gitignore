@@ -1,0 +1,4 @@
+# Panel state: server list and the SSH key used to reach them.
+data/
+app/static/htmx.min.js
+__pycache__/
