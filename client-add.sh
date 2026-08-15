@@ -1,17 +1,27 @@
 #!/usr/bin/env bash
 # Add an AmneziaWG client, save its config next to this script, and show the QR.
+#
+# --split (default): tunnel everything except the private networks. For Android/iOS.
+# --full: plain 0.0.0.0/0. Use for Linux and macOS, where wg-quick needs a /0 prefix
+# to keep the route to the server's Endpoint out of the tunnel.
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONTAINER="amneziawg"
 NAME="${1:-}"
+MODE="${2:-}"
 
 if [ -z "${NAME}" ]; then
-  echo "Usage: $(basename "$0") <client-name>"
+  echo "Usage: $(basename "$0") <client-name> [--full|--split]"
   exit 1
 fi
 
-docker exec "${CONTAINER}" awg_manage --addclient "${NAME}"
+case "${MODE}" in
+  ""|--full|--split) ;;
+  *) echo "Usage: $(basename "$0") <client-name> [--full|--split]"; exit 1 ;;
+esac
+
+docker exec "${CONTAINER}" awg_manage --addclient "${NAME}" ${MODE}
 
 mkdir -p "${DIR}/clients"
 # Write via stdout redirect so the file is owned by the current user (readable),

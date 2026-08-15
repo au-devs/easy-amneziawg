@@ -50,7 +50,7 @@ All scripts wrap `awg_manage` inside the container.
 
 | Command | Description |
 |---|---|
-| `./client-add.sh <name>` | Create a client, save `clients/<name>.conf`, print its QR code |
+| `./client-add.sh <name> [--full\|--split]` | Create a client, save `clients/<name>.conf`, print its QR code |
 | `./client-qr.sh <name>` | Print the QR code for an existing client |
 | `./client-list.sh` | List existing clients |
 | `./client-rm.sh <name> [-y]` | Remove a client (`-y` skips the confirmation prompt) |
@@ -105,6 +105,43 @@ through the tunnel. To get the old behaviour, set `CLIENT_EXCLUDE_NETS=` (empty)
 Both variables are read at client-creation time, so changing them takes effect on the next
 `./client-add.sh` — no need to wipe `data/`.
 
+### Routing modes: `--split` vs `--full`
+
+**Desktop clients need `--full`.** On Linux and macOS the tunnel is brought up by
+`wg-quick`/`awg-quick`, which enables its endpoint-protection logic **only when `AllowedIPs`
+contains a `/0` prefix**:
+
+```bash
+elif [[ $1 == */0 ]]; then
+    add_default "$1"          # fwmark + policy routing
+else
+    ip route add "$1" dev wg0 # plain route
+fi
+```
+
+With an explicit subnet list there is no `/0`, so no fwmark rule is installed — and the
+server's own `Endpoint` address, which falls inside one of those subnets, gets routed into
+the tunnel itself. The handshake never leaves the machine. macOS fails the same way: without
+`/0` it skips `AUTO_ROUTE4` and never installs the direct host route to the endpoint.
+
+Those clients lose nothing by using `--full`: `ip rule add table main suppress_prefixlength 0`
+(Linux) and the connected LAN routes being more specific than `0.0.0.0/1`+`128.0.0.0/1`
+(macOS) already keep the local network reachable outside the tunnel.
+
+Android and iOS are unaffected — `VpnService.protect()` and `NEPacketTunnelProvider` keep the
+tunnel socket outside the VPN at the OS level, so the split list works there and is worth
+having, since a full tunnel on mobile does swallow the LAN.
+
+```bash
+./client-add.sh phone                # --split (default), for Android/iOS
+./client-add.sh macbook --full       # 0.0.0.0/0, for Linux/macOS
+
+docker exec amneziawg awg_manage --setallowedips macbook --full   # switch an existing client
+```
+
+`--setallowedips` rewrites only the client-side config; keys and the server peer stay intact,
+so just re-fetch and re-import the config on the device.
+
 ```bash
 docker exec amneziawg awg_manage --showallowedips     # preview the computed list
 docker exec amneziawg awg_manage --updateallowedips   # rewrite it in all existing clients
@@ -158,6 +195,9 @@ issued client configs. It is enough to restore an instance on the same IP and po
   open in the provider firewall, and try switching the client's network (mobile <-> Wi-Fi).
 - **Client won't import / connects but drops** — make sure you are using an AmneziaWG client,
   not plain WireGuard.
+- **No handshake on Linux or macOS, works on phones** — the client was issued in `--split`
+  mode. `wg-quick` routes the server's `Endpoint` into the tunnel when `AllowedIPs` has no
+  `/0` prefix. Switch it: `awg_manage --setallowedips <name> --full`.
 - **Inspect state:**
   ```bash
   docker logs amneziawg

@@ -18,13 +18,22 @@ DEFAULT_EXCLUDE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100
 usage() {
   cat <<EOF
 Usage:
-  awg_manage --addclient NAME        Add a client and print its config path
+  awg_manage --addclient NAME [--full|--split]  Add a client and print its config path
   awg_manage --listclients           List existing clients
   awg_manage --showclientcfg NAME    Print a client config to stdout
   awg_manage --showclientqr NAME     Print a client config as a QR code
   awg_manage --removeclient NAME [-y]  Remove a client
-  awg_manage --showallowedips        Print the AllowedIPs used for new clients
+  awg_manage --showallowedips [--full|--split]  Print the AllowedIPs a new client would get
+  awg_manage --setallowedips NAME --full|--split  Switch an existing client's routing mode
   awg_manage --updateallowedips      Rewrite AllowedIPs in all existing client configs
+
+Routing modes:
+  --split  (default) everything except CLIENT_EXCLUDE_NETS goes through the tunnel.
+           Use for Android/iOS, where a full tunnel also swallows the local network.
+  --full   plain 0.0.0.0/0. Required for wg-quick clients (Linux, macOS): without a
+           /0 prefix wg-quick skips its fwmark/endpoint-route handling and the route
+           to the server's Endpoint ends up inside the tunnel itself. Those clients
+           keep LAN access anyway via 'suppress_prefixlength 0'.
 EOF
 }
 
@@ -105,6 +114,14 @@ client_allowed_ips() {
   printf '%s' "${out}, ${WG_SUBNET_BASE}.0/24"
 }
 
+resolve_aips() {
+  case "${1}" in
+    ""|--split) client_allowed_ips ;;
+    --full)     printf '%s' "0.0.0.0/0" ;;
+    *)          echo "unknown routing mode: ${1} (expected --full or --split)" >&2; exit 1 ;;
+  esac
+}
+
 next_octet() {
   base_re="$(printf '%s' "${WG_SUBNET_BASE}" | sed 's/\./\\./g')"
   used="$(grep -oE "AllowedIPs *= *${base_re}\.[0-9]+" "${CONF}" 2>/dev/null | grep -oE '[0-9]+$' || true)"
@@ -118,13 +135,13 @@ addclient() {
   [ -z "${name}" ] && { echo "client name required"; exit 1; }
   cfg="${CLIENTS_DIR}/${name}.conf"
   [ -f "${cfg}" ] && { echo "client '${name}' already exists"; exit 1; }
+  aips="$(resolve_aips "$2")"
 
   priv="$(awg genkey)"
   pub="$(printf '%s' "${priv}" | awg pubkey)"
   psk="$(awg genpsk)"
   o="$(next_octet)"
   ip="${WG_SUBNET_BASE}.${o}"
-  aips="$(client_allowed_ips)"
 
   {
     echo ""
@@ -202,14 +219,31 @@ removeclient() {
 }
 
 showallowedips() {
-  client_allowed_ips
+  resolve_aips "$1"
   echo
+}
+
+setallowedips() {
+  name="$1"
+  [ -z "${name}" ] && { echo "client name required"; exit 1; }
+  [ -z "$2" ] && { echo "routing mode required (--full or --split)"; exit 1; }
+  cfg="${CLIENTS_DIR}/${name}.conf"
+  [ -f "${cfg}" ] || { echo "no such client: ${name}"; exit 1; }
+  aips="$(resolve_aips "$2")"
+  sed -i "s|^AllowedIPs *=.*|AllowedIPs = ${aips}|" "${cfg}"
+  echo "Client '${name}' set to $2."
+  echo "Re-import ${cfg} on the device."
 }
 
 updateallowedips() {
   aips="$(client_allowed_ips)"
   for cfg in "${CLIENTS_DIR}"/*.conf; do
     [ -e "${cfg}" ] || continue
+    # Leave full-tunnel clients alone; they are full-tunnel on purpose.
+    if grep -q '^AllowedIPs *= *0\.0\.0\.0/0 *$' "${cfg}"; then
+      echo "skipped $(basename "${cfg}" .conf) (--full)"
+      continue
+    fi
     sed -i "s|^AllowedIPs *=.*|AllowedIPs = ${aips}|" "${cfg}"
     echo "updated $(basename "${cfg}" .conf)"
   done
@@ -217,12 +251,13 @@ updateallowedips() {
 }
 
 case "$1" in
-  --addclient)        addclient "$2" ;;
+  --addclient)        addclient "$2" "$3" ;;
   --listclients)      listclients ;;
   --showclientcfg)    showclientcfg "$2" ;;
   --showclientqr)     showclientqr "$2" ;;
   --removeclient)     removeclient "$2" "$3" ;;
-  --showallowedips)   showallowedips ;;
+  --showallowedips)   showallowedips "$2" ;;
+  --setallowedips)    setallowedips "$2" "$3" ;;
   --updateallowedips) updateallowedips ;;
   *)                  usage; exit 1 ;;
 esac
