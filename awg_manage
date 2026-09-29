@@ -15,6 +15,11 @@ mkdir -p "${CLIENTS_DIR}"
 # multicast and reserved space (224.0.0.0/3 covers 224.0.0.0-255.255.255.255).
 DEFAULT_EXCLUDE_NETS="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 224.0.0.0/3"
 
+# Obfuscation keys copied from client_params.env into client configs; unset ones are skipped.
+AWG_KEYS="Jc Jmin Jmax S1 S2 S3 S4 H1 H2 H3 H4 I1 I2 I3 I4 I5 HeaderProtectionKey
+  ContentPaddingAddition RekeyAfterTime RekeyTimeout RejectAfterTime KeepaliveTimeout
+  MaxHandshakeAttempts RandomTrailers DisableCookies"
+
 usage() {
   cat <<EOF
 Usage:
@@ -159,21 +164,17 @@ addclient() {
   rm -f "${pskf}"
 
   umask 077
-  cat > "${cfg}" <<EOF
-[Interface]
-PrivateKey = ${priv}
-Address = ${ip}/32
-DNS = ${CLIENT_DNS}
-MTU = ${CLIENT_MTU}
-Jc = ${Jc}
-Jmin = ${Jmin}
-Jmax = ${Jmax}
-S1 = ${S1}
-S2 = ${S2}
-H1 = ${H1}
-H2 = ${H2}
-H3 = ${H3}
-H4 = ${H4}
+  {
+    echo "[Interface]"
+    echo "PrivateKey = ${priv}"
+    echo "Address = ${ip}/32"
+    echo "DNS = ${CLIENT_DNS}"
+    echo "MTU = ${CLIENT_MTU}"
+    for k in ${AWG_KEYS}; do
+      if [ -n "${!k}" ]; then echo "${k} = ${!k}"; fi
+    done
+  } > "${cfg}"
+  cat >> "${cfg}" <<EOF
 
 [Peer]
 PublicKey = ${SERVER_PUB}

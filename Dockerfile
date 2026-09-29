@@ -10,8 +10,8 @@ RUN apt-get update && \
 
 WORKDIR /build
 
-ARG AWG_GO_VERSION=v3.0.2
-ARG AWG_TOOLS_VERSION=v1.0.20260618-2
+ARG AWG_GO_VERSION=v3.1.20260828
+ARG AWG_TOOLS_VERSION=v3.1.20260812
 
 RUN git clone --branch "${AWG_GO_VERSION}" --depth 1 \
       https://github.com/amnezia-vpn/amneziawg-go && \

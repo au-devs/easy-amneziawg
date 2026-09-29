@@ -151,18 +151,25 @@ docker exec amneziawg awg_manage --updateallowedips   # rewrite it in all existi
 re-fetch the configs afterwards (`./fetch-clients.sh` / `client-qr.sh`) and re-import them on
 the devices.
 
-Obfuscation parameters (`Jc`, `Jmin`, `Jmax`, `S1`, `S2`, `H1`–`H4`) are generated on first
-start and stored in `data/client_params.env`. You may pin them via the same `environment:`
-block, but the defaults are sound — leave them auto-generated so each server has a unique
-signature. Server and client must use the same `S1/S2/H1–H4`; the client scripts handle this
-automatically.
+Obfuscation parameters (AmneziaWG 3.1 profile: `Jc`, `Jmin`, `Jmax`, `S1`–`S4`, `H1`–`H4`,
+`I1`, `HeaderProtectionKey`, `RekeyAfterTime`, `RekeyTimeout`, `RejectAfterTime`,
+`KeepaliveTimeout`, `MaxHandshakeAttempts`, `RandomTrailers`, `DisableCookies`) are generated
+on first start and stored in `data/client_params.env`. You may pin any of them via the same
+`environment:` block (an empty `I1` disables it; `ContentPaddingAddition` is off unless set),
+but the defaults follow the official Amnezia installer. Server and client must use the same
+values for everything except `Jc/Jmin/Jmax`, `I1`–`I5` and `ContentPaddingAddition`; the
+client scripts handle this automatically. Header protection requires `S1`–`S4` >= 12.
+
+Parameters are only generated when `data/wg0.conf` does not exist. An existing `data/` keeps
+its original parameters after a rebuild. To move it to the current profile, back up `data/`,
+remove it, restart the container and re-issue every client (`./client-add.sh <name>`).
 
 ## Client apps
 
 Use an official **AmneziaWG** client (not plain WireGuard):
 
-- Android / iOS / macOS / Windows: AmneziaWG or Amnezia VPN
-- Linux: `amneziawg-tools`
+- Android / iOS / macOS / Windows: AmneziaWG or Amnezia VPN 5.0.1.5+ (AmneziaWG 3.1 support)
+- Linux: `amneziawg-tools` v3.1+ with `amneziawg-go` v3.1+
 
 ## Deploying to another server
 
@@ -215,8 +222,8 @@ issued client configs. It is enough to restore an instance on the same IP and po
 
 ## Pinned versions
 
-- `amneziawg-go` `v3.0.2`
-- `amneziawg-tools` `v1.0.20260618-2`
+- `amneziawg-go` `v3.1.20260828`
+- `amneziawg-tools` `v3.1.20260812`
 - Base image `ubuntu:24.04`
 
 Change the `ARG` values in the `Dockerfile` to upgrade.

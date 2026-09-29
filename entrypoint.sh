@@ -29,50 +29,52 @@ if [ ! -f "${CONF}" ]; then
   SERVER_PUB="$(printf '%s' "${SERVER_PRIV}" | awg pubkey)"
   printf '%s\n' "${SERVER_PUB}" > "${CONFIG_DIR}/server_public.key"
 
-  # AmneziaWG obfuscation parameters (1.0 profile, broadly client-compatible).
-  # Jc/Jmin/Jmax: junk-packet train. S1/S2: init/response size prefixes.
-  # H1..H4: dynamic header magics, must be distinct and match on the client.
+  # AmneziaWG 3.1 obfuscation parameters; defaults follow the official Amnezia installer.
+  # Everything except Jc/Jmin/Jmax, I1-I5 and ContentPaddingAddition must match on the client.
+  # Header protection needs S1-S4 >= 12. H1-H4 must not overlap.
   Jc="${Jc:-4}"; Jmin="${Jmin:-40}"; Jmax="${Jmax:-70}"
-  S1="${S1:-66}"; S2="${S2:-57}"
+  S1="${S1:-12}"; S2="${S2:-12}"; S3="${S3:-12}"; S4="${S4:-12}"
   H1="${H1:-$(( RANDOM*RANDOM % 500000000 + 1 ))}"
   H2="${H2:-$(( RANDOM*RANDOM % 500000000 + 500000000 ))}"
   H3="${H3:-$(( RANDOM*RANDOM % 500000000 + 1000000000 ))}"
   H4="${H4:-$(( RANDOM*RANDOM % 500000000 + 1500000000 ))}"
+  HeaderProtectionKey="${HeaderProtectionKey:-$(awg genkey)}"
+  RekeyAfterTime="${RekeyAfterTime:-100-120}"
+  RekeyTimeout="${RekeyTimeout:-3-7}"
+  RejectAfterTime="${RejectAfterTime:-150-180}"
+  KeepaliveTimeout="${KeepaliveTimeout:-5-15}"
+  MaxHandshakeAttempts="${MaxHandshakeAttempts:-15-20}"
+  RandomTrailers="${RandomTrailers:-on}"
+  DisableCookies="${DisableCookies:-on}"
+  # Client-only: a DNS-response-shaped packet sent before the handshake.
+  I1="${I1-<r 2><b 0x858000010001000000000669636c6f756403636f6d0000010001c00c000100010000105a00044d583737>}"
 
-  cat > "${CONF}" <<EOF
-[Interface]
-PrivateKey = ${SERVER_PRIV}
-Address = ${WG_ADDRESS}
-ListenPort = ${WG_PORT}
-Jc = ${Jc}
-Jmin = ${Jmin}
-Jmax = ${Jmax}
-S1 = ${S1}
-S2 = ${S2}
-H1 = ${H1}
-H2 = ${H2}
-H3 = ${H3}
-H4 = ${H4}
-EOF
+  SERVER_AWG_KEYS="Jc Jmin Jmax S1 S2 S3 S4 H1 H2 H3 H4 HeaderProtectionKey ContentPaddingAddition
+    RekeyAfterTime RekeyTimeout RejectAfterTime KeepaliveTimeout MaxHandshakeAttempts
+    RandomTrailers DisableCookies"
+
+  {
+    echo "[Interface]"
+    echo "PrivateKey = ${SERVER_PRIV}"
+    echo "Address = ${WG_ADDRESS}"
+    echo "ListenPort = ${WG_PORT}"
+    for k in ${SERVER_AWG_KEYS}; do
+      if [ -n "${!k}" ]; then echo "${k} = ${!k}"; fi
+    done
+  } > "${CONF}"
   chmod 600 "${CONF}"
 
-  cat > "${PARAMS}" <<EOF
-SERVER_PUB='${SERVER_PUB}'
-VPN_PUBLIC_IP='${VPN_PUBLIC_IP}'
-WG_PORT='${WG_PORT}'
-WG_SUBNET_BASE='$(printf '%s' "${WG_ADDRESS}" | cut -d/ -f1 | sed 's/\.[0-9]*$//')'
-CLIENT_DNS='${CLIENT_DNS}'
-CLIENT_MTU='${CLIENT_MTU}'
-Jc='${Jc}'
-Jmin='${Jmin}'
-Jmax='${Jmax}'
-S1='${S1}'
-S2='${S2}'
-H1='${H1}'
-H2='${H2}'
-H3='${H3}'
-H4='${H4}'
-EOF
+  {
+    echo "SERVER_PUB='${SERVER_PUB}'"
+    echo "VPN_PUBLIC_IP='${VPN_PUBLIC_IP}'"
+    echo "WG_PORT='${WG_PORT}'"
+    echo "WG_SUBNET_BASE='$(printf '%s' "${WG_ADDRESS}" | cut -d/ -f1 | sed 's/\.[0-9]*$//')'"
+    echo "CLIENT_DNS='${CLIENT_DNS}'"
+    echo "CLIENT_MTU='${CLIENT_MTU}'"
+    for k in ${SERVER_AWG_KEYS} I1 I2 I3 I4 I5; do
+      if [ -n "${!k}" ]; then echo "${k}='${!k}'"; fi
+    done
+  } > "${PARAMS}"
   chmod 600 "${PARAMS}"
   echo "Server public key: ${SERVER_PUB}"
 fi
