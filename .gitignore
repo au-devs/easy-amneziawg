@@ -8,3 +8,5 @@ clients/
 
 # Default output dir of fetch-clients.sh
 amneziawg-clients/
+
+.DS_Store

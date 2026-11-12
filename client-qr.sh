@@ -2,7 +2,7 @@
 # Show the QR code for an existing client.
 set -euo pipefail
 
-CONTAINER="amneziawg"
+CONTAINER="${CONTAINER:-amneziawg}"
 NAME="${1:-}"
 
 if [ -z "${NAME}" ]; then

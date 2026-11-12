@@ -3,7 +3,7 @@
 set -euo pipefail
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTAINER="amneziawg"
+CONTAINER="${CONTAINER:-amneziawg}"
 NAME="${1:-}"
 
 if [ -z "${NAME}" ]; then

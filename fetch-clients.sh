@@ -12,6 +12,7 @@
 # Env overrides:
 #   CONTAINER   docker container name on the server (default: amneziawg)
 set -euo pipefail
+umask 077
 
 HOST="${1:-}"
 MASK="${2:-*}"
@@ -23,7 +24,9 @@ if [ -z "${HOST}" ]; then
   exit 1
 fi
 
-names="$(ssh "${HOST}" "docker exec ${CONTAINER} awg_manage --listclients" 2>/dev/null | tr -d '\r')"
+SSH=(ssh -o ControlMaster=auto -o "ControlPath=/tmp/fetch-clients-%C" -o ControlPersist=30)
+
+names="$("${SSH[@]}" "${HOST}" "docker exec ${CONTAINER} awg_manage --listclients" | tr -d '\r')"
 if [ -z "${names}" ]; then
   echo "No clients found on ${HOST} (container '${CONTAINER}')."
   exit 1
@@ -40,8 +43,8 @@ while IFS= read -r name; do
     *) continue ;;
   esac
   matched=$((matched+1))
-  if ssh -n "${HOST}" "docker exec ${CONTAINER} awg_manage --showclientcfg ${name}" \
-       > "${DEST}/${name}.conf" 2>/dev/null && [ -s "${DEST}/${name}.conf" ]; then
+  if "${SSH[@]}" -n "${HOST}" "docker exec ${CONTAINER} awg_manage --showclientcfg ${name}" \
+       > "${DEST}/${name}.conf" && [ -s "${DEST}/${name}.conf" ]; then
     chmod 600 "${DEST}/${name}.conf"
     echo "OK   ${name}"
     count=$((count+1))

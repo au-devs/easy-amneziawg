@@ -224,7 +224,7 @@ issued client configs. It is enough to restore an instance on the same IP and po
 
 - `amneziawg-go` `v3.1.20260828`
 - `amneziawg-tools` `v3.1.20260812`
-- Base image `ubuntu:24.04`
+- Builder image `golang:1.25-bookworm`, runtime image `ubuntu:24.04`
 
 Change the `ARG` values in the `Dockerfile` to upgrade.
 

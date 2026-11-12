@@ -5,9 +5,10 @@
 # --full: plain 0.0.0.0/0. Use for Linux and macOS, where wg-quick needs a /0 prefix
 # to keep the route to the server's Endpoint out of the tunnel.
 set -euo pipefail
+umask 077
 
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONTAINER="amneziawg"
+CONTAINER="${CONTAINER:-amneziawg}"
 NAME="${1:-}"
 MODE="${2:-}"
 

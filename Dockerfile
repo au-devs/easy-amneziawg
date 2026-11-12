@@ -1,30 +1,33 @@
-FROM ubuntu:24.04
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-      ca-certificates curl git make gcc build-essential pkg-config \
-      iproute2 iptables qrencode golang-go && \
-    rm -rf /var/lib/apt/lists/*
+FROM golang:1.25-bookworm AS build
 
 WORKDIR /build
 
 ARG AWG_GO_VERSION=v3.1.20260828
 ARG AWG_TOOLS_VERSION=v3.1.20260812
 
+ENV GOTOOLCHAIN=local CGO_ENABLED=0
+
 RUN git clone --branch "${AWG_GO_VERSION}" --depth 1 \
       https://github.com/amnezia-vpn/amneziawg-go && \
-    cd amneziawg-go && \
-    make && \
-    install -m 0755 amneziawg-go /usr/local/bin/amneziawg-go
+    make -C amneziawg-go && \
+    install -D -m 0755 amneziawg-go/amneziawg-go /out/amneziawg-go
 
 RUN git clone --branch "${AWG_TOOLS_VERSION}" --depth 1 \
       https://github.com/amnezia-vpn/amneziawg-tools && \
-    cd amneziawg-tools/src && \
-    make && \
-    make install PREFIX=/usr/local
+    make -C amneziawg-tools/src && \
+    install -m 0755 amneziawg-tools/src/wg /out/awg && \
+    install -m 0755 amneziawg-tools/src/wg-quick/linux.bash /out/awg-quick
 
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+      ca-certificates curl iproute2 iptables qrencode && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /out/ /usr/local/bin/
 RUN ln -s /usr/local/bin/awg /usr/local/bin/wg && \
     ln -s /usr/local/bin/awg-quick /usr/local/bin/wg-quick
 

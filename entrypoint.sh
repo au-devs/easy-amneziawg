@@ -91,10 +91,8 @@ SUBNET="$(awk -F'= *' '/^Address/{print $2}' "${CONF}" | cut -d/ -f1 | sed 's/\.
 iptables -t nat -C POSTROUTING -s "${SUBNET}" -o "${NET_IFACE}" -j MASQUERADE 2>/dev/null || \
   iptables -t nat -A POSTROUTING -s "${SUBNET}" -o "${NET_IFACE}" -j MASQUERADE
 iptables -C FORWARD -i wg0 -j ACCEPT 2>/dev/null || iptables -A FORWARD -i wg0 -j ACCEPT
-iptables -C FORWARD -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-  iptables -A FORWARD -o wg0 -m state --state RELATED,ESTABLISHED -j ACCEPT
-iptables -C INPUT -p udp --dport "${WG_PORT}" -j ACCEPT 2>/dev/null || \
-  iptables -A INPUT -p udp --dport "${WG_PORT}" -j ACCEPT
+iptables -C FORWARD -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
+  iptables -A FORWARD -o wg0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 
 echo "AmneziaWG up on UDP/${WG_PORT}, NAT via ${NET_IFACE} for ${SUBNET}."
 awg show || true
